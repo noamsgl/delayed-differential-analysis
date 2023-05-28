@@ -50,10 +50,10 @@ function lotka_volterra(du, u, p, t)
 end
 
 # ╔═╡ c31b3a07-cd53-43d3-9d97-dcd299451ec3
-@bind slider1 Slider(0.0:0.01:2.0) 
+@bind slider1 Slider(0.0:0.01:2.0, default=1.0) 
 
 # ╔═╡ ddcc1128-11fa-41d9-80fc-3297295d9dd8
-@bind slider2 Slider(0.0:0.01:2.0)
+@bind slider2 Slider(0.0:0.01:2.0; default=1.0)
 
 # ╔═╡ 9ebe62fc-45b5-4d40-892d-efcf7b4c16e4
 begin
@@ -65,14 +65,73 @@ begin
 	prob = ODEProblem(lotka_volterra, u0, tspan, p)
 end
 
-# ╔═╡ 4498cee5-9c0a-498f-a296-8a974c9922c8
-
-
 # ╔═╡ d57ad5aa-df33-4e16-9ba4-161111de06eb
 solution = solve(prob, Tsit5())
 
 # ╔═╡ b6f4b8dc-57cf-41b3-a92a-89d5374f4ede
 plot(solution, title="Lotka-Volterra Simulation")
+
+# ╔═╡ ad879cc4-cfae-4470-ad80-e7ae0d1f88a0
+md"""
+Sampling Noisy Data
+"""
+
+# ╔═╡ 5691ac32-35a7-4d6a-8f45-895a6bf729b9
+begin
+	sol = solve(prob, Tsit5(); saveat=0.1)
+	odedata = Array(sol) + 0.8 * randn(size(Array(sol)))
+
+	plot(sol; alpha=0.3)
+	scatter!(sol.t, odedata'; color=[1,2], label="")
+end 
+
+# ╔═╡ 2f719a43-3cbd-4305-a1da-d9d5f8742fa8
+@model function fitlv(data, prob)
+	# fit the data to the Lotka Volterra problem
+	# prior distributions.
+	σ ~ InverseGamma(2, 3)
+	α ~ truncated(Normal(1.5, 0.5), 0.5, 2.5)
+	β ~ truncated(Normal(1.2, 0.5), 0, 2)
+	γ ~ truncated(Normal(3.0, 0.5), 1, 4)
+	δ ~ truncated(Normal(1.0, 0.5), 0, 2)
+
+	# simulate lotka-volterra model
+	p = [α, β, γ, δ]
+	predicted = solve(prob, Tsit5(); p=p, saveat=0.1)
+
+	# Observations
+	for i in 1:length(predicted)
+		data[:, i] ~ MvNormal(predicted[i], σ^2 * I)
+	end
+	return nothing
+end
+
+# ╔═╡ 09c323cd-772b-433c-b59c-79259c47102b
+model = fitlv(odedata, prob)
+
+# ╔═╡ 2f892f7b-dbb1-4f7c-9f86-6aa4449f7076
+chain = sample(model, NUTS(0.65), MCMCSerial(), 1000, 3; progress=false)
+
+# ╔═╡ edbe84e2-0d2c-4937-8a5b-867270b3d497
+plot(chain)
+
+# ╔═╡ 41f9c33a-05d4-4fe9-9962-9c81704a220b
+begin
+	plot(; legend=false)
+	posterior_samples = sample(chain[[:α, :β, :γ, :δ]], 300; replace=false)
+	for p in eachrow(Array(posterior_samples))
+		sol_p = solve(prob, Tsit5(); p=p, saveat=0.1)
+		plot!(sol_p; alpha=0.1, color="#BBBBBB")
+	end
+
+	# plot simulation and noisy observations
+	plot!(sol; color=[1 2], linewidth=1)
+	scatter!(sol.t, odedata'; color = [1 2])
+end
+
+
+# ╔═╡ 9d05a79b-b261-444d-8542-0f32b704bccf
+
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -2477,7 +2536,14 @@ version = "1.4.1+0"
 # ╠═ddcc1128-11fa-41d9-80fc-3297295d9dd8
 # ╠═b6f4b8dc-57cf-41b3-a92a-89d5374f4ede
 # ╠═9ebe62fc-45b5-4d40-892d-efcf7b4c16e4
-# ╠═4498cee5-9c0a-498f-a296-8a974c9922c8
 # ╠═d57ad5aa-df33-4e16-9ba4-161111de06eb
+# ╟─ad879cc4-cfae-4470-ad80-e7ae0d1f88a0
+# ╠═5691ac32-35a7-4d6a-8f45-895a6bf729b9
+# ╠═2f719a43-3cbd-4305-a1da-d9d5f8742fa8
+# ╠═09c323cd-772b-433c-b59c-79259c47102b
+# ╠═2f892f7b-dbb1-4f7c-9f86-6aa4449f7076
+# ╠═edbe84e2-0d2c-4937-8a5b-867270b3d497
+# ╠═41f9c33a-05d4-4fe9-9962-9c81704a220b
+# ╠═9d05a79b-b261-444d-8542-0f32b704bccf
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
